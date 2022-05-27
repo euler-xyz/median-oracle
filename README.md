@@ -46,16 +46,6 @@ This rules out maintaining the set of observations in any kind of sorted data-st
 
 Although Uniswap3's oracle read gas usage is acceptable for many applications, systems that use centralised and non-objective oracles like Chainlink currently have a competitive advantage in this dimension. Ideally gas efficiency would match or exceed Chainlink's.
 
-## Quantisation
-
-Uniswap3 has a clever innovation that involves encoding prices into "ticks". These are essentially logarithms of the prices scaled and truncated in such a way that they can be efficiently stored. In Uniswap3's scheme, any tick can be represented by a number between -887272 and 887272 inclusive. This is 20.759 bits of information so it can be stored in an `int24` data-type which occupies only 3 bytes. Since there are many more possible prices than there are ticks, by the pigeonhole principle multiple prices can map to the same tick, and converting a price into a tick loses information.
-
-This operation -- lossily compressing a large input domain down to a smaller output range -- is called quantisation. Our oracle design builds upon Uniswap3's tick concept (because it is our hope that in the future it could be adapted to work with... Uniswap4?), but adds another level of quantisation.
-
-Given a tick value, we divide it by 30 and take the floor, giving a number between -29576 and 29575 inclusive. This is 15.8521 bits of information and can therefore pack into an `int16` (2 bytes). In order to recover an approximation of the original tick, we multiply by 30 and add 15. In signal processing jargon, this is called a mid-riser quantisation, since if you imagine the plot of inputs to outputs being a staircase, the 0 is right at the edge of a stair (the "riser"). In our case, an input tick of 0 will remap to a tick of 15, and a tick of -1 to -15.
-
-Although packing a tick into 2 bytes has significant gas benefits (as we'll describe later), it reduces the precision of prices that can be tracked. While a Uniswap3 tick is always guaranteed to be no more than 0.005% away from the original price, our quantised ticks can be up to 0.15% away.
-
 ## Limitations
 
 For reasons that will become clear in the following sections, our oracle has a few fundamental API limitations compared to Uniswap's TWAP:
@@ -68,6 +58,16 @@ Additionally the proof of concept has a few implementation limitations that will
 
 * The ring buffer is not resizable
 * The storage of ring-buffer meta-data is not necessarily packed optimally, and will need to be integrated with the application contract
+
+## Quantisation
+
+Uniswap3 has a clever innovation that involves encoding prices into "ticks". These are essentially logarithms of the prices scaled and truncated in such a way that they can be efficiently stored. In Uniswap3's scheme, any tick can be represented by a number between -887272 and 887272 inclusive. This is 20.759 bits of information so it can be stored in an `int24` data-type which occupies only 3 bytes. Since there are many more possible prices than there are ticks, by the pigeonhole principle multiple prices can map to the same tick, and converting a price into a tick loses information.
+
+This operation -- lossily compressing a large input domain down to a smaller output range -- is called quantisation. Our oracle design builds upon Uniswap3's tick concept (because it is our hope that in the future it could be adapted to work with... Uniswap4?), but adds another level of quantisation.
+
+Given a tick value, we divide it by 30 and take the floor, giving a number between -29576 and 29575 inclusive. This is 15.8521 bits of information and can therefore pack into an `int16` (2 bytes). In order to recover an approximation of the original tick, we multiply by 30 and add 15. In signal processing jargon, this is called a mid-riser quantisation, since if you imagine the plot of inputs to outputs being a staircase, the 0 is right at the edge of a stair (the "riser"). In our case, an input tick of 0 will remap to a tick of 15, and a tick of -1 to -15.
+
+Although packing a tick into 2 bytes has significant gas benefits (as we'll describe later), it reduces the precision of prices that can be tracked. While a Uniswap3 tick is always guaranteed to be no more than 0.005% away from the original price, our quantised ticks can be up to 0.15% away.
 
 ## Ring Buffer
 
@@ -89,7 +89,7 @@ Our proposed oracle first checks if the time since the last update is older than
 
 Otherwise, the oracle reads "backwards" (most recent observation first) in the ring buffer until it finds an observation older than or equal to the requested window. Because we keep a cached value of the current ring buffer entry on the stack, 8 elements are loaded with each storage load. Each element read is also pushed onto an array in memory. If adding the last element onto the array pushes the total observation time over the window length, it is artificially shortened. If there are not enough observations to satisfy the requested window, then the requested window parameter *itself* is shortened. This means that after loading from the ring buffer, the sum of the durations of all elements in the memory array is exactly equal to the (possibly modified) requested window.
 
-At this point we have an unordered pile of sticks in our memory array. Our original description of weighted medium called for sorting them, however that would involve some unnecessary work. We just want to find the element that overlaps the middle of the total length of the stick: we don't care about the orderings of the sticks before or after that point.
+At this point we have an unordered pile of sticks in our memory array. Our original description of weighted median called for sorting them, however that would involve some unnecessary work. We just want to find the element that overlaps the middle of the total length of the stick: we don't care about the orderings of the sticks before or after that point.
 
 There are various solutions to this problem, but our proof of concept uses the standard textbook solution (literally -- see exercise 9-2 in [CLRS Algorithms](https://www.amazon.com/Introduction-Algorithms-fourth-Thomas-Cormen/dp/026204630X/)). It implements a variation of QuickSelect, which is itself a variation of QuickSort. While QuickSort partitions its input into two segments and then recurses into each one, QuickSelect only recurses into the segment where the position of the element it is seeking resides (which it knows because it has determined the pivot index). This allows a position to be selected in O(N) time, rather than O(N log(N)) as with QuickSort. The variation required for weighted median simply chooses which direction to recurse based on the accumulated weights on one side (compared with half of the total weight), rather than an absolute position (which is unknown).
 
@@ -102,7 +102,7 @@ Once we have found the median element, it is simply a matter of converting it fr
 
 Another difference between Uniswap3 and our proposed oracle is how requests for window lengths that cannot be satisfied (because the ring buffer is too short) are processed. While Uniswap3 fails with the error message `OLD`, we return the result for the longest available window, along with the size of that window. It is up to the calling code to decide if the resulting window is adequate.
 
-# Simulation
+## Simulation
 
 In order to analyse our proposed oracle, we have constructed a simulation. We downloaded all the Uniswap3 `Swap` logs for various common pairs, and replayed them in a test environment. The test environment performs the implied pricing oracle updates against our oracle and a stripped down version of Uniswap3 which does nothing except for update the price oracle. This allows us to compare the current price to the median and TWAP, as well as examine gas usage between the two systems.
 
@@ -119,7 +119,7 @@ The following plots in this section are for some of the most popular Uniswap3 po
 * The gas numbers include a 21000 gas overhead for creating a transaction (identical for median and Uniswap3). Typical overhead where the prices are queried from a smart contract would be smaller).
 * The USDC/DAI pair illustrates the best-case scenario for the median price oracle. In this case, the price almost entirely remained within a  0.3% quantisation, so reads could be serviced with either 1 or 2 SLOADs.
 
-# Window Sizing
+## Window Sizing
 
 One commonly cited advantage of centralised oracle systems like Chainlink is that they can respond to price movements faster than can TWAPs. This is true, but in practice isn't as much of an issue as is implied, for reasons outside the scope of this analysis.
 
@@ -136,9 +136,9 @@ To demonstrate the second point, we re-ran the USDC/WETH example above with a 10
 
 How much shorter the windows can be still needs to be researched. It will be especially important to create a detailed attacker threat model considering the changes resulting from Proof of Stake, MEV-Boost, etc.
 
-# Other Notes
+## Other Notes
 
-## Precision
+### Precision
 
 The median oracle trades off price precision for gas efficiency. In real-world AMM usage, price movements are often relatively small. This may be due to small swaps or perhaps larger swaps that are arbitraged back in the same block to nearly the original price. With our oracle, price movements that don't change the quantised tick do not result in an oracle update. This reduces the work needed during read because there are fewer slots to scan (see the above simulation of USDC/DAI for a stark example of this). Note that Uniswap3 does this as well, but at 0.01% granularity instead of 0.3%. Most Chainlink oracles effectively have a price granularity of 1%.
 
@@ -148,7 +148,7 @@ The price error introduced by quantisation can be observed by zooming in on a se
 
 One possible worst-case trading pattern for our oracle would be a pool that oscillates across a tick boundary frequently. Even though the price movements would be small, each would involve a new entry added to the ring buffer. There are some ways to mitigate this though -- see the Future Optimisations section.
 
-## Binary search overhead
+### Binary search overhead
 
 The proposed median oracle has a clear gas advantage over Uniswap3 in almost all real-world market conditions that we have observed.
 
@@ -160,19 +160,19 @@ It is an underappreciated fact that the larger the ring buffer grows in Uniswap3
 
 The initial data is skewed since the buffer is being populated. Once the horizontal bands start we are at the steady state. We haven't investigated this distribution in detail, but believe the bands have to do with how many iterations the binary search requires. By contrast, our proposed oracle is not affected at all by larger ring buffer sizes (assuming that the desired window is satisfiable).
 
-## Accumulation of Quantisation Error
+### Accumulation of Quantisation Error
 
 Quantisation error doesn't aggregate with median, does with mean FIXME: flesh out
 
 
-# Future Optimisations
+## Future Optimisations
 
 * In order to prevent the issue of prices oscillating around a quantised tick boundary and causing frequent appends to the ring buffer, a possible solution may be to look back one additional entry when applying a price update where the price has only moved one tick (and perhaps only if we're *not* on a storage slot boundary). If the previous entry is the same tick as the new tick, the most recent entry in the price oracle could be updated to account for the passed time, and then swapped with the previous entry. This would very slightly skew the calculated median, but probably would not be noticeable in practice.
 * Our initial design had a "threshold" parameter that could be specified when reading the oracle. This would further quantise the data after reading from the ring buffer in order to coalesce nearby ticks together, further trading off price accuracy for gas efficiency. However, at this time we don't believe this strategy will be productive, since it only reduces the work required to compute the weighted median, which is generally dominated by the cost of reading the entries from storage. This might benefit from future study.
 * If computing the weighted median cost more gas relative to SLOADing the entries, there are many possible optimisations. For example, small arrays could be processed with pre-computed "selection networks". Or, we could improve the pivot selection of the current algorithm. One very effective way to select pivots is with a pseudo-random number generator, since the "randomness" will compensate for any biases in the input data. An interesting approach would be for users of the price oracle to pass in a seed for the PRNG. They could simulate off-chain the gas usage for a series of seeds and select the best one to provide to the contract.
 
 
-# Author
+## Author
 
 Doug Hoyte
 
