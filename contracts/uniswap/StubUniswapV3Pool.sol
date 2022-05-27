@@ -77,7 +77,7 @@ contract StubUniswapV3Pool {
         );
     }
 
-    function readOracle(uint16 desiredAge, uint)
+    function readOracle(uint16 desiredAge)
         external
         view
         returns (int24, uint16)

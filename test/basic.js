@@ -23,7 +23,7 @@ describe("median oracle tests", function () {
             await ethers.provider.send("evm_setNextBlockTimestamp", [ts]);
             await ethers.provider.send("evm_mine");
 
-            let res = await oracle.readOracle(1800, 1);
+            let res = await oracle.readOracle(1800);
 
             expect(res[0]).to.equal(tickOut);
             expect(res[0]).to.be.gte(TICK_MIN);
@@ -88,7 +88,7 @@ describe("median oracle tests", function () {
 
             const windowLen = 1800;
 
-            let res = await oracle.readOracle(windowLen, 1);
+            let res = await oracle.readOracle(windowLen);
 
             // Check result
 

@@ -45,7 +45,7 @@ contract MedianOracle {
         }
     }
 
-    function readOracle(uint16 desiredAge, uint /*tolerance*/) external view returns (int24, uint16) { // returns (tick, actualAge)
+    function readOracle(uint16 desiredAge) external view returns (int24, uint16) { // returns (tick, actualAge)
         unchecked {
             int24 _currTick = currTick;
             uint16 _ringCurr = ringCurr;
@@ -134,7 +134,7 @@ contract MedianOracle {
         }
     }
 
-    // Quick Select, modified to account for item weights
+    // QuickSelect, modified to account for item weights
 
     function weightedMedian(uint[] memory arr, uint targetWeight) private pure returns (uint) {
         unchecked {

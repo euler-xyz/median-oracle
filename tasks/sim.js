@@ -109,11 +109,11 @@ task("sim")
         let gas;
 
         try {
-            gas = await oracle.estimateGas.readOracle(windowSize, 1);
+            gas = await oracle.estimateGas.readOracle(windowSize);
             console.log(`${i} GAS`,gas.toNumber());
             gases.push(gas.toNumber());
 
-            res = await oracle.readOracle(windowSize, 1);
+            res = await oracle.readOracle(windowSize);
             console.log(`${i} RES`,res);
         } catch(e) {
             console.log("SKIPPING ERR");
