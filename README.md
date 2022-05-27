@@ -44,7 +44,7 @@ There are various implementation challenges with computing the median on-chain. 
 
 This rules out maintaining the set of observations in any kind of sorted data-structure. Therefore the weighted median must be entirely computed during oracle read time (when asking the oracle to provide a price). Here the requirements aren't quite as severe, but nevertheless for many applications it would be ideal if this overhead were kept as small as possible. For example, in lending markets like Compound/AAVE/Euler, a user's net assets and liabilities may need to be computed by a contract to determine if a requested action is permitted, and each of these may need an up-to-date price.
 
-Although Uniswap3's oracle read gas usage is acceptable for many applications, systems that use centralised and non-objective oracles like Chainlink currently have a competitive advantage in this dimension. Ideally gas efficiency would match or exceed Chainlink's.
+Although Uniswap3's oracle read gas usage is acceptable for many applications, systems that use centralised and [non-objective](https://blog.euler.finance/prices-and-oracles-2da0126a138) oracles like Chainlink currently have a competitive advantage in this dimension. Ideally gas efficiency would match or exceed Chainlink's.
 
 ## Limitations
 
@@ -79,26 +79,28 @@ Unlike Uniswap3, however, we attempt to pack multiple observations into a single
 
 Because of how time is encoded, this means that an observation cannot be longer than 65535 seconds (a value of 0 seconds is invalid, and is reserved to indicate an uninitialised slot). This results in a limitation of the oracle, in that windows of longer than 65535 seconds (about 18 hours 12 minutes) cannot be queried. Price durations longer than 65535 seconds [saturate](https://en.wikipedia.org/wiki/Saturation_arithmetic) to 65535, which is fine since a window can never be longer than that.
 
-One consequence of this encoding is that pre-populating the ring buffer ("increasing the cardinality" in Uniswap terms) requires 1/8th the gas cost compared to Uniswap3, per slot.
+One consequence of this encoding is that pre-populating the ring buffer ("increasing the cardinality" in Uniswap terms) requires 1/8th the gas compared to Uniswap3, per slot.
 
 ### Reads
 
-Compared to Uniswap3, the oracle read mechanism is entirely different. After checking boundary conditions which involve loading both the first and last items in the ring buffer, the Uniswap3 oracle proceeds to binary search the ring buffer, starting with the middle element.
+Compared to Uniswap3, the oracle read mechanism is entirely different.
 
-Our proposed oracle first checks if the time since the last update is older than the window. If so, it returns a cached copy of the current tick. Both of these values will be packed into a shared storage slot of the containing smart contract, so in this case no ring buffer access is needed whatsoever.
+Our proposed oracle first checks if the time since the last update is older than the window. If so, it simply returns a cached copy of the current tick. Both of these values will be packed into a shared storage slot of the containing smart contract, so in this case no ring buffer access is needed whatsoever.
 
-Otherwise, the oracle reads "backwards" (most recent observation first) in the ring buffer until it finds an observation older than or equal to the requested window. Because we keep a cached value of the current ring buffer entry on the stack, 8 elements are loaded with each storage load. Each element read is also pushed onto an array in memory. If adding the last element onto the array pushes the total observation time over the window length, it is artificially shortened. If there are not enough observations to satisfy the requested window, then the requested window parameter *itself* is shortened. This means that after loading from the ring buffer, the sum of the durations of all elements in the memory array is exactly equal to the (possibly modified) requested window.
+Otherwise, a memory array is created that will store observations from the ring buffer. If the current price has been in effect for a non-zero amount of time, then a "virtual" observation is pushed onto the memory array representing the passed time at the current price.
+
+The oracle then proceeds to read "backwards" (most recent observation first) in the ring buffer until it finds an observation older than or equal to the requested window. Because we keep a cached value of the current ring buffer entry on the stack, 8 elements are loaded with each storage load. Each element read is pushed onto the memory array. If adding the last element onto the array pushes the total observation time over the window length, it is artificially shortened. If there are not enough observations to satisfy the requested window, then the requested window parameter *itself* is shortened. This means that after loading from the ring buffer, the sum of the durations of all elements in the memory array is exactly equal to the (possibly modified) window length.
 
 At this point we have an unordered pile of sticks in our memory array. Our original description of weighted median called for sorting them, however that would involve some unnecessary work. We just want to find the element that overlaps the middle of the total length of the stick: we don't care about the orderings of the sticks before or after that point.
 
-There are various solutions to this problem, but our proof of concept uses the standard textbook solution (literally -- see exercise 9-2 in [CLRS Algorithms](https://www.amazon.com/Introduction-Algorithms-fourth-Thomas-Cormen/dp/026204630X/)). It implements a variation of QuickSelect, which is itself a variation of QuickSort. While QuickSort partitions its input into two segments and then recurses into each one, QuickSelect only recurses into the segment where the position of the element it is seeking resides (which it knows because it has determined the pivot index). This allows a position to be selected in O(N) time, rather than O(N log(N)) as with QuickSort. The variation required for weighted median simply chooses which direction to recurse based on the accumulated weights on one side (compared with half of the total weight), rather than an absolute position (which is unknown).
+There are various solutions to this problem, but our proof of concept uses the standard textbook solution (literally -- see exercise 9-2 in [CLRS Algorithms](https://www.amazon.com/Introduction-Algorithms-fourth-Thomas-Cormen/dp/026204630X/)). It implements a variation of QuickSelect, which is itself a variation of QuickSort. While QuickSort partitions its input into two segments and then recurses into each one, QuickSelect only recurses into the segment where the position of the element it is seeking resides (which it knows because it has determined the index of the pivot element). This allows a position to be selected in O(N) time, rather than O(N log(N)) as with QuickSort. The variation required for weighted median simply chooses which direction to recurse based on the accumulated weights on one side (compared with half of the total weight), rather than an absolute position (which is unknown).
 
 As always, there are a few minor tricks involved getting this to work efficiently on-chain:
 
 * Solidity doesn't actually support dynamic memory arrays, so unfortunately to do this in one pass we need use a bit of assembly. This works by saving the free memory pointer ahead of time and then storing each element into unused space. At the end we increase the free memory pointer and store the original value (and length) into a memory array. Of course we need to ensure that no other memory allocations occur during the construction.
 * Each element of the memory array is encoded specially. The observation's tick is converted into a non-negative integer by adding a large value to it, and then this value is cast to a `uint` and then shifted left, leaving lower order bits free to contain the duration of the observation. This way, sorting is possible by simply using the regular `>` and `<` operations on the `uint` datatype. Empirically, unlike storage, packing elements in memory beyond the word size is usually not worthwhile.
 
-Once we have found the median element, it is simply a matter of converting it from its memory encoding, unquantising the internal tick, and returning the result.
+Once we have found the element that overlaps the median weight, it is simply a matter of extracting its tick from its memory encoding, unquantising it, and returning the result.
 
 Another difference between Uniswap3 and our proposed oracle is how requests for window lengths that cannot be satisfied (because the ring buffer is too short) are processed. While Uniswap3 fails with the error message `OLD`, we return the result for the longest available window, along with the size of that window. It is up to the calling code to decide if the resulting window is adequate.
 
@@ -123,14 +125,14 @@ The following plots in this section are for some of the most popular Uniswap3 po
 
 One commonly cited advantage of centralised oracle systems like Chainlink is that they can respond to price movements faster than can TWAPs. This is true, but in practice isn't as much of an issue as is implied, for reasons outside the scope of this analysis.
 
-As described above, the issue with TWAPs is they need to be a sufficient length in order to have many "good" samples out-compete the presumably few "bad" samples. However, with median oracles, "bad" samples, or to be more neutral, "outliers", do not have significant impact on the output price until their time-in-effect approaches half of the window size.
+As described above, the issue with TWAPs is they need to be sufficiently long in order to have many "good" samples out-weigh the presumably few "bad" samples. However, with median oracles, "bad" samples, or to be more neutral, "outliers", do not have significant impact on the output price until their time-in-effect approaches half of the window size.
 
 Because of this, we have reason to believe that median oracles can support shorter windows than TWAPs while maintaining equivalent security. If true, this would have two benefits:
 
 * Legitimate price movements are reflected in the oracle output faster, leaving shorter windows of opportunity to attack protocols with stale prices
 * Reducing the worst-case gas consumption of the oracle
 
-To demonstrate the second point, we re-ran the USDC/WETH example above with a 10 minute window instead of a 30 minutes window. There was a significant improvement, and even at the peak of the crash the worst-case gas usage remained well below typical Uniswap3 costs: 
+To demonstrate the second point, we re-ran the USDC/WETH example above with a 10 minute window instead of a 30 minutes window. There was a significant improvement, and even at the peak of the crash the highest gas usage remained well below typical Uniswap3 costs: 
 
 ![](pics/gas-usage-usdc-weth-10min-window.png)
 
