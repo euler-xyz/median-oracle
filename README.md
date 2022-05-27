@@ -8,7 +8,9 @@ The following plot is from our simulation, using real Swap events from the Unisw
 
 ![](pics/overview.png)
 
-Here is a link to the contract code: FIXME. The remainder of this document consists of a description of the implementation and analysis of its behaviour.
+The contract code is available in this repo in the file `contracts/MedianOracle.sol` .
+
+The remainder of this document consists of a description of the implementation and analysis of its behaviour.
 
 ## TWAP
 
@@ -108,7 +110,7 @@ Another difference between Uniswap3 and our proposed oracle is how requests for 
 
 In order to analyse our proposed oracle, we have constructed a simulation. We downloaded all the Uniswap3 `Swap` logs for various common pairs, and replayed them in a test environment. The test environment performs the implied pricing oracle updates against our oracle and a stripped down version of Uniswap3 which does nothing except for update the price oracle. This allows us to compare the current price to the median and TWAP, as well as examine gas usage between the two systems.
 
-The following plots in this section are for some of the most popular Uniswap3 pools around the time of the Great Crypto Crash of May 12th, 2022. This period of time was chosen because there was an extreme amount of price activity and trading volume, which are the worst-case conditions for our oracle. Both Uniswap3 and the median oracle have their ring buffer sizes set to 144.
+The following plots in this section show the cost to read the oracles around the time of the Great Crypto Crash of May 12th, 2022. This period of time was chosen because there was an extreme amount of price activity and trading volume, which are the worst-case conditions for our oracle. Both Uniswap3 and the median oracle have their ring buffer sizes set to 144.
 
 ![](pics/gas-usage-usdc-weth.png)
 ![](pics/gas-usage-dai-weth.png)
@@ -132,7 +134,7 @@ Because of this, we have reason to believe that median oracles can support short
 * Legitimate price movements are reflected in the oracle output faster, leaving shorter windows of opportunity to attack protocols with stale prices
 * Reducing the worst-case gas consumption of the oracle
 
-To demonstrate the second point, we re-ran the USDC/WETH example above with a 10 minute window instead of a 30 minutes window. There was a significant improvement, and even at the peak of the crash the highest gas usage remained well below typical Uniswap3 costs: 
+To demonstrate the second point, we re-ran the USDC/WETH example above with a 10 minute window instead of a 30 minute window. There was a significant improvement, and even at the peak of the crash the highest gas usage remained well below typical Uniswap3 costs: 
 
 ![](pics/gas-usage-usdc-weth-10min-window.png)
 
@@ -142,7 +144,7 @@ How much shorter the windows can be still needs to be researched. It will be esp
 
 ### Precision
 
-The median oracle trades off price precision for gas efficiency. In real-world AMM usage, price movements are often relatively small. This may be due to small swaps or perhaps larger swaps that are arbitraged back in the same block to nearly the original price. With our oracle, price movements that don't change the quantised tick do not result in an oracle update. This reduces the work needed during read because there are fewer slots to scan (see the above simulation of USDC/DAI for a stark example of this). Note that Uniswap3 does this as well, but at 0.01% granularity instead of 0.3%. Most Chainlink oracles effectively have a price granularity of 1%.
+The median oracle trades off price precision for gas efficiency. In real-world AMM usage, price movements are often relatively small. This may be due to small swaps or perhaps larger swaps that are arbitraged back in the same block to nearly the original price. With our oracle, price movements that don't change the quantised tick do not result in an oracle update. This reduces the work needed during reads because there are fewer slots to scan (see the above simulation of USDC/DAI for a stark example of this). Note that Uniswap3 does this as well, but at 0.01% granularity instead of 0.3%. Most Chainlink oracles effectively have a price granularity of 1%.
 
 The price error introduced by quantisation can be observed by zooming in on a section of our simulation's graphs where there are no trades for the duration of the window. In this case, both the TWAP and the median will settle down to a "steady state" which can be compared against the (unchanging) current price:
 
@@ -161,11 +163,6 @@ It is an underappreciated fact that the larger the ring buffer grows in Uniswap3
 ![](pics/uniswap-ring-buffer-sizes.png)
 
 The initial data is skewed since the buffer is being populated. Once the horizontal bands start we are at the steady state. We haven't investigated this distribution in detail, but believe the bands have to do with how many iterations the binary search requires. By contrast, our proposed oracle is not affected at all by larger ring buffer sizes (assuming that the desired window is satisfiable).
-
-### Accumulation of Quantisation Error
-
-Quantisation error doesn't aggregate with median, does with mean FIXME: flesh out
-
 
 ## Future Optimisations
 
