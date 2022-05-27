@@ -1,9 +1,9 @@
 reset
 
-#set terminal wxt size 800,600 enhanced font 'Verdana,9' persist
+set terminal wxt size 800,600 enhanced font 'Verdana,9' persist
 
-set terminal pngcairo size 800,600 enhanced font 'Verdana,9'
-set output 'output.png'
+#set terminal pngcairo size 800,600 enhanced font 'Verdana,9'
+#set output 'output.png'
 
 
 set title "Oracle gas usage, USDC/WETH .3%, 10 min window"
