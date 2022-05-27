@@ -18,7 +18,7 @@ Various attacks against Uniswap TWAPs have been [extensively analysed](https://g
 
 TWAPs are *not* vulnerable to "zero-block" attacks where an attacker manipulates a price but then moves it back in the same block. This is because 0 time passes within a block's execution, so the time-weight component is 0.
 
-So called "one-block" attacks are when an attacker manipulates a price and then arbitrages it back in the next block to recover the funds at risk before anybody else has a chance to. This is possible (but risky) when using flashbots or selfish mining (where a miner tries to mine two blocks in a row but withholds the first one until the second is found). However, in order for a one-block attack to significantly modify the TWAP, the price must be moved to a very high (or very low) level, because it needs to outweigh all the other prices in the window. One of the advantages of geometric over arithmetic averaging is price movements are symmetric in the up and down directions.
+So called "one-block" attacks are when an attacker manipulates a price and then arbitrages it back in the next block to recover the funds at risk before anybody else has a chance to. This is possible (but risky) when using flashbots or selfish mining (where a miner tries to mine two blocks in a row but withholds the first one until the second is found). However, in order for a one-block attack to significantly modify the TWAP, the price must be moved to a very high (or very low) level, because it needs to outweigh all the other prices in the window. One of the advantages of geometric over arithmetic averaging is that price security is symmetric in up and down directions.
 
 "Multi-block" attacks are when an attacker manipulates a price and then attempts to hold it at this manipulated price for multiple blocks, either sacrificing funds to arbitrageurs or censoring transactions in some manner. These attacks are certainly harder and more risky, however they don't require moving the price as far as in a one-block attack since the manipulated price will have a larger time-weight.
 
@@ -26,15 +26,15 @@ In both of these cases, an averaged price will start to move immediately, and th
 
 The exact attacker threat model for these attacks is still being determined. Certainly it includes attackers who can control or influence multiple blocks in a row. Miners have theoretically always had this ability, and systems like Flashbots have made it more accessible to everyone else.
 
-Furthermore, with Ethereum's move to Proof of Stake, the mechanism of who creates blocks will change. Rather than being chosen effectively at random as with Proof of Work, validators will know ahead of time exactly when they will be able to create a block, and can choose to time an attack based on that. What's more, sometimes by chance validators (or colluding groups of validators) will be able to create multiple blocks in row. There are also potentially relevant changes coming to flashbots such as "MEV Boost" which could allow attackers to control entire block bodies and more.
+Furthermore, with Ethereum's move to Proof of Stake, the mechanism of who creates blocks will change. Rather than being chosen effectively at random each block as with Proof of Work, validators will know ahead of time exactly when they will be able to create a block, and can choose to time an attack based on that. What's more, sometimes by chance validators (or colluding groups of validators) will be able to create multiple blocks in row. There are also potentially relevant changes coming to flashbots such as "MEV Boost" which could allow attackers to control entire block bodies and more.
 
 All of this is to say that we think the time is now to being investigating alternate oracle designs that will improve security in the presence of price-manipulators who are also participants in blockchain consensus.
 
 ## Median Filtering
 
-Median filtering is often used in image processing because it is very effective at removing [salt-and-pepper](https://medium.com/analytics-vidhya/remove-salt-and-pepper-noise-with-median-filtering-b739614fe9db) noise from images. This type of noise is caused by impulses, such as a cosmic ray, or a burned out camera pixel. By throwing out outlying pixels from the image and replacing them with their more reasonable-valued neighbours, images can be cleaned up with minimal distortion. Because the impulses are entirely thrown out, their presence has no impact on the output image. This is in contrast with other types of filters that incorporate the impulses in some kind of average.
+Median filtering is often used in image processing because it is very effective at removing [salt-and-pepper](https://medium.com/analytics-vidhya/remove-salt-and-pepper-noise-with-median-filtering-b739614fe9db) noise. This type of noise is caused by impulses, such as a cosmic ray, or a burned out camera pixel. By throwing out outlying pixels from the image and replacing them with their more reasonable-valued neighbours, images can be cleaned up with minimal distortion. Because the impulses are entirely thrown out, their presence has no impact on the output image. This is in contrast with other types of filters that incorporate the impulses into some kind of average.
 
-For the same reason, our proposed price oracle uses median instead of mean as its foundation. Imagine that every second we pushed the current price onto a big array. To query a window of N seconds, we would take the last N prices, sort them, and return the middle (median) price. If the price has been stable for some period of time, this means that there is no value you can move the price to that will impact the median in the following block. What's more, even if you manipulate the price and are able to hold it at the manipulated level, you will need to sustain this manipulated price for N/2 seconds for it to have any impact whatsoever.
+For the same reason, our proposed price oracle uses median instead of mean as its foundation. Imagine that every second we pushed the current price onto a big array. To query a window of N seconds, we would take the last N prices, sort them, and return the middle (median) price. If the price has been stable for some period of time, this means that there is no value you can move the price to that will impact the median in the following block. What's more, even if you manipulate the price and are able to hold it at the manipulated level, you will need to sustain this manipulated price for N/2 seconds for it to have an impact.
 
 Of course, recording a price every second is impractical, so it makes more sense to think of each time interval as a stick, where the length corresponds to the amount of time the price was in effect. The sticks are sorted according to price (either ascending or descending, it doesn't matter) and arranged end-to-end in a big line. The stick that overlaps the mid-point of this big line provides the oracle's output price. In technical terms, this is called the "weighted median", where weight corresponds to stick length.
 
@@ -42,7 +42,7 @@ Of course, recording a price every second is impractical, so it makes more sense
 
 ## Gas Usage Requirements
 
-There are various implementation challenges with computing the median on-chain. First of all, the gas overhead to update the price oracle (ie during a swap) must be minimised so as not to penalise swappers just to maintain an oracle (which they likely don't care about). In this design, we have assumed that this operation must remain constant with respect to the number of observations mantained by the oracle, and should involve no more than 1 cold storage slot access (as with Uniswap3).
+There are various implementation challenges with computing the median on-chain. First of all, the gas overhead to update the price oracle (ie during a swap) must be minimised so as not to force swappers to maintain an oracle (which they likely don't care about). In this design, we have assumed that this operation must remain constant with respect to the number of observations mantained by the oracle, and should involve no more than 1 cold storage slot access (as with Uniswap3).
 
 This rules out maintaining the set of observations in any kind of sorted data-structure. Therefore the weighted median must be entirely computed during oracle read time (when asking the oracle to provide a price). Here the requirements aren't quite as severe, but nevertheless for many applications it would be ideal if this overhead were kept as small as possible. For example, in lending markets like Compound/AAVE/Euler, a user's net assets and liabilities may need to be computed by a contract to determine if a requested action is permitted, and each of these may need an up-to-date price.
 
@@ -54,6 +54,7 @@ For reasons that will become clear in the following sections, our oracle has a f
 
 * The minimum price resolution available is 0.3%, giving a maximum error of 0.15% (see the Quantisation section)
 * The maximum time window that can be requested is 65535 seconds (about 18 hours 12 minutes)
+* The queried window must always be aligned to the present -- you cannot query historical windows
 * Only price can be queried, not pool liquidity
 
 Additionally the proof of concept has a few implementation limitations that will be addressed in the future:
@@ -65,7 +66,7 @@ Additionally the proof of concept has a few implementation limitations that will
 
 Uniswap3 has a clever innovation that involves encoding prices into "ticks". These are essentially logarithms of the prices scaled and truncated in such a way that they can be efficiently stored. In Uniswap3's scheme, any tick can be represented by a number between -887272 and 887272 inclusive. This is 20.759 bits of information so it can be stored in an `int24` data-type which occupies only 3 bytes. Since there are many more possible prices than there are ticks, by the pigeonhole principle multiple prices can map to the same tick, and converting a price into a tick loses information.
 
-This operation -- lossily compressing a large input domain down to a smaller output range -- is called quantisation. Our oracle design builds upon Uniswap3's tick concept (because it is our hope that in the future it could be adapted to work with... Uniswap4?), but adds another level of quantisation.
+This operation -- lossily compressing a large input domain down to a smaller output range -- is called quantisation. Our oracle design builds upon Uniswap3's tick specification (because we hope that in the future it could be adapted to work with... Uniswap4?), but adds another level of quantisation.
 
 Given a tick value, we divide it by 30 and take the floor, giving a number between -29576 and 29575 inclusive. This is 15.8521 bits of information and can therefore pack into an `int16` (2 bytes). In order to recover an approximation of the original tick, we multiply by 30 and add 15. In signal processing jargon, this is called a mid-riser quantisation, since if you imagine the plot of inputs to outputs being a staircase, the 0 is right at the edge of a stair (the "riser"). In our case, an input tick of 0 will remap to a tick of 15, and a tick of -1 to -15.
 
@@ -79,17 +80,17 @@ Like Uniswap3, our proposed oracle uses a ring buffer. Updates to the buffer wor
 
 Unlike Uniswap3, however, we attempt to pack multiple observations into a single slot. Each 32-byte slot is divided into 8 sub-slots of 4 bytes each. The first two bytes contain the quantised tick (see above) and the second two bytes contain the number of seconds since the previous update.
 
-Because of how time is encoded, this means that an observation cannot be longer than 65535 seconds (a value of 0 seconds is invalid, and is reserved to indicate an uninitialised slot). This results in a limitation of the oracle, in that windows of longer than 65535 seconds (about 18 hours 12 minutes) cannot be queried. Price durations longer than 65535 seconds [saturate](https://en.wikipedia.org/wiki/Saturation_arithmetic) to 65535, which is fine since a window can never be longer than that.
+Because of how time is encoded, this means that an observation cannot be longer than 65535 seconds (a value of 0 seconds is invalid, and is reserved to indicate an uninitialised slot). This results in a limitation of the oracle, in that windows of longer than 65535 seconds (about 18 hours 12 minutes) cannot be queried. Price durations longer than 65535 seconds [saturate](https://en.wikipedia.org/wiki/Saturation_arithmetic) to 65535, which is acceptable since a window can never be longer than that.
 
 One consequence of this encoding is that pre-populating the ring buffer ("increasing the cardinality" in Uniswap terms) requires 1/8th the gas compared to Uniswap3, per slot.
 
 ### Reads
 
-Compared to Uniswap3, the oracle read mechanism is entirely different.
+The oracle read mechanism is entirely different from Uniswap3. 
 
 Our proposed oracle first checks if the time since the last update is older than the window. If so, it simply returns a cached copy of the current tick. Both of these values will be packed into a shared storage slot of the containing smart contract, so in this case no ring buffer access is needed whatsoever.
 
-Otherwise, a memory array is created that will store observations from the ring buffer. If the current price has been in effect for a non-zero amount of time, then a "virtual" observation is pushed onto the memory array representing the passed time at the current price.
+Otherwise, a memory array is created that will store observations from the ring buffer. If the current price has been in effect for a non-zero amount of time, then a "virtual" observation is pushed onto the memory array representing the elapsed time at the current price.
 
 The oracle then proceeds to read "backwards" (most recent observation first) in the ring buffer until it finds an observation older than or equal to the requested window. Because we keep a cached value of the current ring buffer entry on the stack, 8 elements are loaded with each storage load. Each element read is pushed onto the memory array. If adding the last element onto the array pushes the total observation time over the window length, it is artificially shortened. If there are not enough observations to satisfy the requested window, then the requested window parameter *itself* is shortened. This means that after loading from the ring buffer, the sum of the durations of all elements in the memory array is exactly equal to the (possibly modified) window length.
 
@@ -97,7 +98,7 @@ At this point we have an unordered pile of sticks in our memory array. Our origi
 
 There are various solutions to this problem, but our proof of concept uses the standard textbook solution (literally -- see exercise 9-2 in [CLRS Algorithms](https://www.amazon.com/Introduction-Algorithms-fourth-Thomas-Cormen/dp/026204630X/)). It implements a variation of QuickSelect, which is itself a variation of QuickSort. While QuickSort partitions its input into two segments and then recurses into each one, QuickSelect only recurses into the segment where the position of the element it is seeking resides (which it knows because it has determined the index of the pivot element). This allows a position to be selected in O(N) time, rather than O(N log(N)) as with QuickSort. The variation required for weighted median simply chooses which direction to recurse based on the accumulated weights on one side (compared with half of the total weight), rather than an absolute position (which is unknown).
 
-As always, there are a few minor tricks involved getting this to work efficiently on-chain:
+As always, there are a few tricks involved getting this to work efficiently on-chain:
 
 * Solidity doesn't actually support dynamic memory arrays, so unfortunately to do this in one pass we need use a bit of assembly. This works by saving the free memory pointer ahead of time and then storing each element into unused space. At the end we increase the free memory pointer and store the original value (and length) into a memory array. Of course we need to ensure that no other memory allocations occur during the construction.
 * Each element of the memory array is encoded specially. The observation's tick is converted into a non-negative integer by adding a large value to it, and then this value is cast to a `uint` and then shifted left, leaving lower order bits free to contain the duration of the observation. This way, sorting is possible by simply using the regular `>` and `<` operations on the `uint` datatype. Empirically, unlike storage, packing elements in memory beyond the word size is usually not worthwhile.
@@ -108,7 +109,7 @@ Another difference between Uniswap3 and our proposed oracle is how requests for 
 
 ## Simulation
 
-In order to analyse our proposed oracle, we have constructed a simulation. We downloaded all the Uniswap3 `Swap` logs for various common pairs, and replayed them in a test environment. The test environment performs the implied pricing oracle updates against our oracle and a stripped down version of Uniswap3 which does nothing except for update the price oracle. This allows us to compare the current price to the median and TWAP, as well as examine gas usage between the two systems.
+In order to analyse our proposed oracle, we have constructed a simulation. We downloaded all the Uniswap3 `Swap` logs for various common pairs on the Ethereum mainnet, and replayed them in a test environment. The test environment performs the implied pricing oracle updates against our oracle and a stripped down version of Uniswap3 which does nothing except for update the price oracle. This allows us to compare the current price to the median and TWAP, as well as examine gas usage between the two systems.
 
 The following plots in this section show the cost to read the oracles around the time of the Great Crypto Crash of May 12th, 2022. This period of time was chosen because there was an extreme amount of price activity and trading volume, which are the worst-case conditions for our oracle. Both Uniswap3 and the median oracle have their ring buffer sizes set to 144.
 
@@ -138,7 +139,7 @@ To demonstrate the second point, we re-ran the USDC/WETH example above with a 10
 
 ![](pics/gas-usage-usdc-weth-10min-window.png)
 
-How much shorter the windows can be still needs to be researched. It will be especially important to create a detailed attacker threat model considering the changes resulting from Proof of Stake, MEV-Boost, etc.
+How much shorter the windows can be still needs to be researched. It will be especially important to create a detailed attacker threat model considering the changes resulting from Proof of Stake, MEV Boost, etc.
 
 ## Other Notes
 
