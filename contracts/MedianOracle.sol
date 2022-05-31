@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 contract MedianOracle {
-    int24 constant TICK_TRUNCATION = 30;
+    int constant TICK_TRUNCATION = 30;
     uint[8192] ringBuffer;
 
     int24 public currTick;
@@ -18,19 +18,19 @@ contract MedianOracle {
 
     function updateOracle(int24 newTick) external {
         unchecked {
-            int24 _currTick = currTick;
-            uint16 _ringCurr = ringCurr;
-            uint16 _ringSize = ringSize;
-            uint64 _lastUpdate = lastUpdate;
+            int _currTick = currTick;
+            uint _ringCurr = ringCurr;
+            uint _ringSize = ringSize;
+            uint _lastUpdate = lastUpdate;
 
             if (newTick == _currTick) return;
 
             uint elapsed = block.timestamp - _lastUpdate;
 
-            int16 qCurrTick = quantiseTick(_currTick);
+            int qCurrTick = quantiseTick(_currTick);
 
             if (elapsed != 0) {
-                (int16 prevTick, uint16 prevDuration) = readRing(_ringCurr);
+                (int prevTick, uint prevDuration) = readRing(_ringCurr);
 
                 if (prevTick == qCurrTick) elapsed += prevDuration;
                 else _ringCurr = (_ringCurr + 1) % _ringSize;
@@ -39,21 +39,23 @@ contract MedianOracle {
             }
 
             currTick = newTick;
-            ringCurr = _ringCurr;
-            ringSize = _ringSize;
+            ringCurr = uint16(_ringCurr);
+            ringSize = uint16(_ringSize);
             lastUpdate = uint64(block.timestamp);
         }
     }
 
-    function readOracle(uint16 desiredAge) external view returns (int24, uint16) { // returns (tick, actualAge)
+    function readOracle(uint desiredAge) external view returns (int24, uint16) { // returns (tick, actualAge)
+        require(desiredAge <= type(uint16).max, "age too big");
+
         unchecked {
-            int24 _currTick = currTick;
-            uint16 _ringCurr = ringCurr;
-            uint16 _ringSize = ringSize;
+            int _currTick = currTick;
+            uint _ringCurr = ringCurr;
+            uint _ringSize = ringSize;
             uint cache = lastUpdate; // stores lastUpdate for first part of function, but then overwritten and used for something else
 
             uint[] memory arr;
-            uint16 actualAge = 0;
+            uint actualAge = 0;
 
             // Load ring buffer entries into memory
 
@@ -68,7 +70,7 @@ contract MedianOracle {
                 // Populate first element in arr with current tick, if any time has elapsed since current tick was set
 
                 {
-                    uint16 duration = clampTime(block.timestamp - cache);
+                    uint duration = clampTime(block.timestamp - cache);
 
                     if (duration != 0) {
                         if (duration > desiredAge) duration = desiredAge;
@@ -91,14 +93,14 @@ contract MedianOracle {
                     cache = type(uint).max; // overwrite lastUpdate, use to cache storage reads
 
                     while (actualAge != desiredAge) {
-                        int16 tick;
-                        uint16 duration;
+                        int tick;
+                        uint duration;
 
                         {
                             if (cache == type(uint).max) cache = ringBuffer[i / 8];
                             uint entry = cache >> (32 * (i % 8));
-                            tick = int16(uint16((entry >> 16) & 0xFFFF));
-                            duration = uint16(entry & 0xFFFF);
+                            tick = int(int16(uint16((entry >> 16) & 0xFFFF)));
+                            duration = entry & 0xFFFF;
                         }
 
                         if (duration == 0) break; // uninitialised
@@ -128,8 +130,8 @@ contract MedianOracle {
             }
 
             return (
-                unQuantiseTick(int(weightedMedian(arr, actualAge / 2) >> 16) - 32768),
-                actualAge
+                int24(unQuantiseTick(int(weightedMedian(arr, actualAge / 2) >> 16) - 32768)),
+                uint16(actualAge)
             );
         }
     }
@@ -196,9 +198,9 @@ contract MedianOracle {
         }
     }
 
-    function writeRing(uint index, int16 tick, uint16 duration) private {
+    function writeRing(uint index, int tick, uint duration) private {
         unchecked {
-            uint packed = (uint(uint16(tick)) << 16) | duration;
+            uint packed = (uint(uint16(int16(tick))) << 16) | duration;
 
             uint shift = (32 * (index % 8));
             ringBuffer[index / 8] = (ringBuffer[index / 8] & ~(0xFFFFFFFF << shift))
@@ -206,34 +208,34 @@ contract MedianOracle {
         }
     }
 
-    function readRing(uint index) public view returns (int16, uint16) {
+    function readRing(uint index) public view returns (int, uint) {
         unchecked {
             uint entry = ringBuffer[index / 8] >> (32 * (index % 8));
-            return (int16(uint16((entry >> 16) & 0xFFFF)), uint16(entry & 0xFFFF));
+            return (int(int16(uint16((entry >> 16) & 0xFFFF))), entry & 0xFFFF);
         }
     }
 
-    function clampTime(uint t) private pure returns (uint16) {
+    function clampTime(uint t) private pure returns (uint) {
         unchecked {
-            return uint16(t > type(uint16).max ? type(uint16).max : t);
+            return t > type(uint16).max ? uint(type(uint16).max) : t;
         }
     }
 
-    function quantiseTick(int24 tick) private pure returns (int16) {
+    function quantiseTick(int tick) private pure returns (int) {
         unchecked {
-            return int16((tick + (tick < 0 ? -(TICK_TRUNCATION-1) : int24(0))) / TICK_TRUNCATION);
+            return (tick + (tick < 0 ? -(TICK_TRUNCATION-1) : int(0))) / TICK_TRUNCATION;
         }
     }
 
-    function unQuantiseTick(int tick) private pure returns (int24) {
+    function unQuantiseTick(int tick) private pure returns (int) {
         unchecked {
-            return int24(tick) * TICK_TRUNCATION + (TICK_TRUNCATION/2);
+            return tick * TICK_TRUNCATION + (TICK_TRUNCATION/2);
         }
     }
 
-    function memoryPackTick(int16 tick, uint16 duration) private pure returns (uint) {
+    function memoryPackTick(int tick, uint duration) private pure returns (uint) {
         unchecked {
-            return (uint(int(tick) + 32768) << 16) | duration;
+            return (uint(tick + 32768) << 16) | duration;
         }
     }
 }
