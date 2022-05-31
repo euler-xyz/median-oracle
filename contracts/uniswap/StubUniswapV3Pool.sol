@@ -77,11 +77,7 @@ contract StubUniswapV3Pool {
         );
     }
 
-    function readOracle(uint16 desiredAge)
-        external
-        view
-        returns (int24, uint16)
-    {
+    function readOracle(uint16 desiredAge) external view returns (uint16, int24, int24) { // returns (actualAge, median=0, average)
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = desiredAge;
         secondsAgos[1] = 0;
@@ -97,8 +93,9 @@ contract StubUniswapV3Pool {
             );
 
         return (
-            int24((tickCumulatives[1] - tickCumulatives[0]) / int56(int(desiredAge))),
-            desiredAge
+            desiredAge,
+            uint16(0),
+            int24((tickCumulatives[1] - tickCumulatives[0]) / int56(int(desiredAge)))
         );
     }
 }

@@ -5,7 +5,8 @@ let ringSize = 144;
 let windowSize = 1800;
 let blockFrom = 14735000;
 //let blockTo = 14750000;
-let blockTo = 14775000;
+//let blockTo = 14775000;
+let blockTo = 14740000;
 let priceInvert = true;
 let decimalScaler = 1e12;
 let minTimeStep = 60*15;
@@ -133,7 +134,7 @@ task("sim")
             return o;
         };
 
-        console.log(`csv,${blocks[i].timestamp},${res[0]},${blocks[i].tick},${tickToPrice(res[0])},${sqrtPriceX96ToPrice(blocks[i].sqrtPriceX96)},${gas}`);
+        console.log(`csv,${blocks[i].timestamp},${res[0]},${blocks[i].tick},${tickToPrice(res[0])},${tickToPrice(res[1])},${sqrtPriceX96ToPrice(blocks[i].sqrtPriceX96)},${gas}`);
     }
 
     console.log(`MIN GAS: ${Math.min.apply(null, gases)}`);
