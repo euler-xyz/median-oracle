@@ -146,27 +146,32 @@ contract MedianOracle {
             uint weightAccum = 0;
             uint left = 0;
             uint right = arr.length - 1;
+            uint arrp;
+
+            assembly {
+                arrp := add(arr, 32)
+            }
 
             while (true) {
-                if (left == right) return memload(arr, left);
+                if (left == right) return memload(arrp, left);
 
-                uint pivot = memload(arr, (left + right) / 2);
+                uint pivot = memload(arrp, (left + right) >> 1);
                 uint i = left - 1;
                 uint j = right + 1;
 
                 while (true) {
-                    do ++i; while (memload(arr, i) < pivot);
-                    do --j; while (memload(arr, j) > pivot);
+                    do ++i; while (memload(arrp, i) < pivot);
+                    do --j; while (memload(arrp, j) > pivot);
 
                     if (i >= j) break;
 
-                    memswap(arr, i, j);
+                    memswap(arrp, i, j);
                 }
 
                 uint leftWeight = 0;
 
                 for (uint n = left; n <= j; ++n) {
-                    leftWeight += memload(arr, n) & 0xFFFF;
+                    leftWeight += memload(arrp, n) & 0xFFFF;
                 }
 
                 if (weightAccum + leftWeight >= targetWeight) {
@@ -184,20 +189,21 @@ contract MedianOracle {
 
     // Array access without bounds checking
 
-    function memload(uint[] memory arr, uint i) private pure returns (uint ret) {
+    function memload(uint arrp, uint i) private pure returns (uint ret) {
         assembly {
-            ret := mload(add(add(arr, 32), mul(i, 32)))
+            ret := mload(add(arrp, mul(i, 32)))
         }
     }
 
     // Swap two items in array without bounds checking
 
-    function memswap(uint[] memory arr, uint i, uint j) private pure {
+    function memswap(uint arrp, uint i, uint j) private pure {
         assembly {
-            let offset := add(arr, 32)
-            let tp := mload(add(offset, mul(i, 32)))
-            mstore(add(offset, mul(i, 32)), mload(add(offset, mul(j, 32))))
-            mstore(add(offset, mul(j, 32)), tp)
+            let iOffset := add(arrp, mul(i, 32))
+            let jOffset := add(arrp, mul(j, 32))
+            let tp := mload(iOffset)
+            mstore(iOffset, mload(jOffset))
+            mstore(jOffset, tp)
         }
     }
 
