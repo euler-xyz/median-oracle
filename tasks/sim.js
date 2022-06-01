@@ -3,12 +3,21 @@ const betterSqlite3 = require('better-sqlite3');
 let pool = 'USDC/WETH/3000';
 let ringSize = 144;
 let windowSize = 1800;
-let blockFrom = 14735000;
-//let blockTo = 14750000;
-//let blockTo = 14775000;
-let blockTo = 14740000;
+
+// Around the crash
+let blockFrom = 14735000; // May-08-2022 08:27:41 AM +UTC
+let blockTo = 14775000; // May-14-2022 05:49:46 PM +UTC
+
+// "Normal" period
+//let blockFrom = 14595000;
+//let blockTo = 14635000;
+
+//let blockFrom = 14760000; // May-12-2022 08:16:38 AM +UTC
+//let blockTo = 14765000; // May-13-2022 03:24:18 AM +UTC
+
 let priceInvert = true;
-let decimalScaler = 1e12;
+let decimalScaler = 1e12; // USDC
+//let decimalScaler = 1e0; // normal
 let minTimeStep = 60*15;
 
 
@@ -95,6 +104,8 @@ task("sim")
     let gases = [];
 
     for (let i = 1; i < blocks.length; i++) {
+        if ((i % 100) === 1) console.error(`${i}/${blocks.length} (${100*i/blocks.length}%)`);
+
         let delay = blocks[i].timestamp - blocks[i-1].timestamp;
         ts += delay;
         if (delay > 0) await ethers.provider.send("evm_setNextBlockTimestamp", [ts]);
@@ -110,14 +121,14 @@ task("sim")
         let gas;
 
         try {
-            gas = await oracle.estimateGas.readOracle(windowSize);
-            console.log(`${i} GAS`,gas.toNumber());
-            gases.push(gas.toNumber());
+            gas = (await oracle.estimateGas.readOracle(windowSize)).toNumber() - 21_000;
+            console.log(`${i} GAS`,gas);
+            gases.push(gas);
 
             res = await oracle.readOracle(windowSize);
             console.log(`${i} RES`,res);
         } catch(e) {
-            console.log("SKIPPING ERR");
+            console.log(`SKIPPING ERR: ${e}`);
             continue;
         }
 
@@ -134,12 +145,14 @@ task("sim")
             return o;
         };
 
-        console.log(`csv,${blocks[i].timestamp},${res[0]},${blocks[i].tick},${tickToPrice(res[0])},${tickToPrice(res[1])},${sqrtPriceX96ToPrice(blocks[i].sqrtPriceX96)},${gas}`);
+        let requantisedTick = tickToPrice(Math.floor(blocks[i].tick / 30) * 30 + 15);
+
+        console.log(`csv,${blocks[i].timestamp},${res[1]},${tickToPrice(blocks[i].tick)},${tickToPrice(res[1])},${tickToPrice(res[2])},${sqrtPriceX96ToPrice(blocks[i].sqrtPriceX96)},${requantisedTick},${gas}`);
     }
 
-    console.log(`MIN GAS: ${Math.min.apply(null, gases)}`);
-    console.log(`MAX GAS: ${Math.max.apply(null, gases)}`);
-    console.log(`AVG GAS: ${avg(gases)}`);
+    console.error(`MIN GAS: ${Math.min.apply(null, gases)}`);
+    console.error(`MAX GAS: ${Math.max.apply(null, gases)}`);
+    console.error(`AVG GAS: ${avg(gases)}`);
 });
 
 function avg(arr) {

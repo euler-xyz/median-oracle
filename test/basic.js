@@ -25,9 +25,9 @@ describe("median oracle tests", function () {
 
             let res = await oracle.readOracle(1800);
 
-            expect(res[0]).to.equal(tickOut);
-            expect(res[0]).to.be.gte(TICK_MIN);
-            expect(res[0]).to.be.lte(TICK_MAX);
+            expect(res[1]).to.equal(tickOut);
+            expect(res[1]).to.be.gte(TICK_MIN);
+            expect(res[1]).to.be.lte(TICK_MAX);
         };
 
         await checkTick(0, 15);
@@ -75,10 +75,10 @@ describe("median oracle tests", function () {
             if (updates.length > 0) updates[updates.length - 1].duration += duration;
 
             {
-                let price = Math.floor((rng() * 10_000) - 0);
+                let price = Math.floor((rng() * 10_000) - 5_000);
 
                 updates.push({
-                    price,
+                    price: Math.floor(price / 30) * 30 + 15,
                     duration: 0,
                 });
 
@@ -114,14 +114,13 @@ describe("median oracle tests", function () {
                 console.log("RES", res);
                 console.log("MEDIAN=",median);
                 console.log("AL=",arr.length);
-                console.log("RES=",res[0]);
             }
 
             if (arr.length === windowLen) {
                 seen++;
 
-                if (res[0] !== median) {
-                    console.log("DIFFERENT",res[0],median);
+                if (res[1] !== median) {
+                    console.log("DIFFERENT",res[1],median);
                     throw("DIFFERENT");
                 }
             }
