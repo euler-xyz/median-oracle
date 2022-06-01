@@ -158,20 +158,25 @@ contract MedianOracle {
                 uint pivot = memload(arrp, (left + right) >> 1);
                 uint i = left - 1;
                 uint j = right + 1;
-
-                while (true) {
-                    do ++i; while (memload(arrp, i) < pivot);
-                    do --j; while (memload(arrp, j) > pivot);
-
-                    if (i >= j) break;
-
-                    memswap(arrp, i, j);
-                }
-
                 uint leftWeight = 0;
 
-                for (uint n = left; n <= j; ++n) {
-                    leftWeight += memload(arrp, n) & 0xFFFF;
+                while (true) {
+                    ++i;
+                    while (true) {
+                        uint w = memload(arrp, i);
+                        if (w >= pivot) break;
+                        leftWeight += w & 0xFFFF;
+                        ++i;
+                    }
+
+                    do --j; while (memload(arrp, j) > pivot);
+
+                    if (i >= j) {
+                        if (i == j) leftWeight += memload(arrp, j) & 0xFFFF;
+                        break;
+                    }
+
+                    leftWeight += memswap(arrp, i, j) & 0xFFFF;
                 }
 
                 if (weightAccum + leftWeight >= targetWeight) {
@@ -195,15 +200,15 @@ contract MedianOracle {
         }
     }
 
-    // Swap two items in array without bounds checking
+    // Swap two items in array without bounds checking, returns new element in i
 
-    function memswap(uint arrp, uint i, uint j) private pure {
+    function memswap(uint arrp, uint i, uint j) private pure returns (uint output) {
         assembly {
             let iOffset := add(arrp, mul(i, 32))
             let jOffset := add(arrp, mul(j, 32))
-            let tp := mload(iOffset)
-            mstore(iOffset, mload(jOffset))
-            mstore(jOffset, tp)
+            output := mload(jOffset)
+            mstore(jOffset, mload(iOffset))
+            mstore(iOffset, output)
         }
     }
 
