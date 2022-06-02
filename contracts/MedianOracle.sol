@@ -145,7 +145,7 @@ contract MedianOracle {
         unchecked {
             uint weightAccum = 0;
             uint left = 0;
-            uint right = arr.length - 1;
+            uint right = (arr.length - 1) * 32;
             uint arrp;
 
             assembly {
@@ -155,21 +155,21 @@ contract MedianOracle {
             while (true) {
                 if (left == right) return memload(arrp, left);
 
-                uint pivot = memload(arrp, (left + right) >> 1);
-                uint i = left - 1;
-                uint j = right + 1;
+                uint pivot = memload(arrp, (left + right) >> 6 << 5);
+                uint i = left - 32;
+                uint j = right + 32;
                 uint leftWeight = 0;
 
                 while (true) {
-                    ++i;
+                    i += 32;
                     while (true) {
                         uint w = memload(arrp, i);
                         if (w >= pivot) break;
                         leftWeight += w & 0xFFFF;
-                        ++i;
+                        i += 32;
                     }
 
-                    do --j; while (memload(arrp, j) > pivot);
+                    do j -= 32; while (memload(arrp, j) > pivot);
 
                     if (i >= j) {
                         if (i == j) leftWeight += memload(arrp, j) & 0xFFFF;
@@ -183,7 +183,7 @@ contract MedianOracle {
                     right = j;
                 } else {
                     weightAccum += leftWeight;
-                    left = j + 1;
+                    left = j + 32;
                 }
             }
         }
@@ -196,7 +196,7 @@ contract MedianOracle {
 
     function memload(uint arrp, uint i) private pure returns (uint ret) {
         assembly {
-            ret := mload(add(arrp, mul(i, 32)))
+            ret := mload(add(arrp, i))
         }
     }
 
@@ -204,8 +204,8 @@ contract MedianOracle {
 
     function memswap(uint arrp, uint i, uint j) private pure returns (uint output) {
         assembly {
-            let iOffset := add(arrp, mul(i, 32))
-            let jOffset := add(arrp, mul(j, 32))
+            let iOffset := add(arrp, i)
+            let jOffset := add(arrp, j)
             output := mload(jOffset)
             mstore(jOffset, mload(iOffset))
             mstore(iOffset, output)
