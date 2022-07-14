@@ -173,7 +173,7 @@ In this case, Uniswap3 simply fails with the error message `OLD`. This can be pr
 
 Sometimes systems would actually be willing to use a shorter window if available. The best way I have found to do this on Uniswap3 is to optimistically query for the ideal window with `observe()`. If that fails with `OLD`, then call `slot0()` on the pool to get the current `index` and `cardinality` and use these parameters to lookup the oldest available observation with `observations()` (and handle the case where that observation is uninitialised), then finally call `observe()` again with the timestamp of this oldest available observation.
 
-To simplify this, and avoid the extra gas costs, our oracle returns the size of the longest available window, along with the median and TWAP for that (shortened) window. This leaves the decision of what to up to the calling code. If the window is adequate then the results can be used, otherwise the transaction can be reverted.
+To simplify this, and avoid the extra gas costs, our oracle returns the size of the longest available window, along with the median and TWAP for that (shortened) window. This leaves the decision of what to do up to the calling code. If the window is adequate then the results can be used, otherwise the transaction can be reverted.
 
 
 ## Simulation
