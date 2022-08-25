@@ -41,23 +41,23 @@ The contract code is available in this repo in the file `contracts/MedianOracle.
 
 Various attacks against TWAPs have been [extensively analysed](https://github.com/euler-xyz/uni-v3-twap-manipulation/blob/master/cost-of-attack.pdf). In most cases TWAPs provide adequate security. TWAPs are *not* vulnerable to "zero-block" attacks where an attacker manipulates a price but then moves it back in the same block. This is because 0 time passes within a block's execution, so the time-weight component is 0.
 
-However, there are a some concerns with TWAP's long-term security properties.
+However, there are some concerns with TWAP's long-term security properties.
 
-So called "one-block" attacks are when an attacker manipulates a price and then arbitrages it back in the next block to recover the funds at risk before anybody else has a chance to. This is possible (but risky) when using flashbots or selfish mining (where a miner tries to mine two blocks in a row but withholds the first one until the second is found). However, in order for a one-block attack to significantly modify the TWAP, the price must be moved to a very high (or very low) level, because it needs to outweigh all the other prices in the window. One of the advantages of geometric over arithmetic averaging is that price security is symmetric in up and down directions (or, equivalently, when the pair is inverted).
+So called "one-block" attacks are when an attacker manipulates a price and then arbitrages it back in the next block to recover the funds at risk before anybody else has a chance to. This is possible (but risky) when using flashbots or selfish mining (where a miner tries to mine two blocks in a row but withholds the first one until the second is found). However, in order for a one-block attack to significantly modify the TWAP, the price must be moved to a very high (or very low) level, because it needs to outweigh all the other price periods in the window. One of the advantages of geometric over arithmetic averaging is that price security is symmetric in up and down directions (or, equivalently, when the pair is inverted).
 
 "Multi-block" attacks are when an attacker manipulates a price and then attempts to hold it at this manipulated price for multiple blocks, either sacrificing funds to arbitrageurs or censoring transactions in some manner. These attacks don't require moving the price as far as in a one-block attack since the manipulated price will have a larger time-weight.
 
-In both of these cases, a TWAP will start to move immediately, and the speed at which it moves is related to how large the price manipulation is. As soon as the averaged price reaches a target level, an attack can begin by, for example, depositing price-inflated collateral into a lending protocol.
+In both of these cases, a TWAP will start to move immediately, and the speed at which it moves is related to how large the price manipulation is. As soon as the averaged price reaches a target level, an attack can begin by, for example, borrowing from a lending protocol using price-inflated collateral.
 
 The exact attacker threat model for these attacks is still being determined. Certainly it includes attackers who can control or influence multiple blocks in a row. Miners have theoretically always had this ability, and systems like Flashbots have made it more accessible to everyone else.
 
-Furthermore, with Ethereum's move to Proof of Stake, the mechanism of who creates blocks will change. Rather than being chosen effectively at random each block as with Proof of Work, validators will know ahead of time exactly when they will be able to create a block and can choose to time an attack based on that. What's more, sometimes by chance validators (or colluding groups of validators) will find they are permitted to create multiple blocks in a row. There are also potentially relevant changes coming to flashbots such as "MEV Boost" which could allow attackers to control entire block bodies and more.
+Furthermore, with Ethereum's move to Proof of Stake, the mechanism of who creates blocks will change. Rather than being chosen effectively at random each block as with Proof of Work, validators will know ahead of time exactly when they will be able to create blocks and can choose to time attacks based on that. What's more, sometimes by chance validators (or colluding groups of validators) will find they are permitted to create multiple blocks in a row. There are also potentially relevant changes coming to flashbots such as "MEV Boost" which could allow attackers to control entire block bodies and more.
 
 All of this is to say that we think the time is now to being investigating alternate oracle designs that will improve security in the presence of price-manipulators who are also participants in blockchain consensus.
 
 ### Median Filtering
 
-Median filtering is often used in image processing because it is very effective at removing [salt-and-pepper](https://medium.com/analytics-vidhya/remove-salt-and-pepper-noise-with-median-filtering-b739614fe9db) noise. This type of noise is caused by impulses, such as a cosmic ray, or a burned out camera pixel. By throwing out outlying pixels from the image and replacing them with their more reasonable-valued neighbours, images can be cleaned up with minimal distortion. Because the impulses are entirely thrown out, their presence has no impact on the output image. This is in contrast with other types of filters that incorporate the impulses into some kind of average.
+Median filtering is often used in image processing because it is very effective at removing [salt-and-pepper](https://medium.com/analytics-vidhya/remove-salt-and-pepper-noise-with-median-filtering-b739614fe9db) noise. This type of noise is caused by impulses, such as a cosmic ray, or a burned out camera pixel. By throwing away outlying pixels from the image and replacing them with their more reasonable-valued neighbours, images can be cleaned up with minimal distortion. Because the impulses are ignored, their presence has no impact on the output image. This is in contrast with other types of filters that incorporate the impulses into some kind of average.
 
 For the same reason, our proposed price oracle uses median instead of mean as its foundation. Imagine that every second we pushed the current price onto a big array. To query a window of N seconds, we would take the last N prices, sort them, and return the middle (median) price. If the price has been stable for some period of time, this means that there is no value you can move the price to that will impact the median in the following block. What's more, even if you manipulate the price and are able to hold it at the manipulated level, you will need to sustain this manipulated price for N/2 seconds for it to have an impact.
 
@@ -102,7 +102,7 @@ Additionally the proof of concept has a few implementation limitations that will
 
 ### Quantisation
 
-Uniswap3 has a clever innovation that involves encoding prices into "ticks". These are essentially logarithms of the prices scaled and truncated in such a way that they can be efficiently stored. In Uniswap3's scheme, any tick can be represented by a number between -887272 and 887272 inclusive. This is 20.759 bits of information so it can be stored in an `int24` data-type which occupies only 3 bytes. Since there are many more possible prices than there are ticks, by the pigeonhole principle multiple prices can map to the same tick, and converting a price into a tick loses information.
+Uniswap3 has a clever innovation that involves encoding prices into "ticks". These are essentially logarithms of the prices scaled and truncated in such a way that they can be efficiently stored. In Uniswap3's scheme, any tick can be represented by a number between -887272 and 887272 inclusive. This is 20.759 bits of information so it can be stored in an `int24` data-type which occupies only 3 bytes. Since there are many more possible prices than there are ticks, multiple prices map to the same tick, and therefore converting a price into a tick loses information.
 
 This operation -- lossily compressing a large input domain down to a smaller output range -- is called quantisation. Our oracle design builds upon Uniswap3's tick specification (because we hope that in the future it could be adapted to work with... Uniswap4?), but adds another level of quantisation.
 
@@ -189,7 +189,7 @@ The following plots in this section show the cost to read the oracles around the
 ![](pics/gas-usage-usdc-weth.png)
 
 * The USDC/DAI pair illustrates the best-case scenario for the median price oracle. In this case, the price almost entirely remained within a  0.3% quantisation, so reads could be serviced with either 1 or 2 SLOADs.
-* USDC/WETH during the crash is the worst behaviour we have simulated with our oracle. Note that the Uniswap3 gas costs are understated: This pair actually has a ring buffer of size 1440 on mainnet, so in real life its costs are [much higher](#binary-search-overhead).
+* USDC/WETH during the crash is the worst behaviour we have simulated with our oracle. Note that the Uniswap3 gas costs are understated: This pair actually has a ring buffer of size 1440 on mainnet, so in real life its costs are [higher](#binary-search-overhead).
 
 ### Window Sizing
 
